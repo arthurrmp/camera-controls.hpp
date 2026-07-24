@@ -44,6 +44,26 @@ final class ViewerView: UIView {
         let tap = UITapGestureRecognizer(target: self, action: #selector(primeTapZoom(_:)))
         tap.cancelsTouchesInView = false
         addGestureRecognizer(tap)
+
+        // Metal work is not allowed in the background. Rendering there
+        // poisons the swap chain and the view comes back frozen.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    @objc private func appDidEnterBackground() {
+        displayLink?.isPaused = true
+    }
+
+    @objc private func appWillEnterForeground() {
+        lastTimestamp = 0
+        statStart = 0
+        statFrames = 0
+        displayLink?.isPaused = false
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
