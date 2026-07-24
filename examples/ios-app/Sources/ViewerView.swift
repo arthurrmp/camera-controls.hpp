@@ -4,7 +4,7 @@ import QuartzCore
 /// CAMetalLayer-backed view. A CADisplayLink drives the render loop and
 /// requests 120Hz on ProMotion screens. The gesture handlers send deltas to
 /// the Viewer, which forwards them to camctl::CameraControls.
-final class ViewerView: UIView {
+final class ViewerView: UIView, UIGestureRecognizerDelegate {
     override class var layerClass: AnyClass { CAMetalLayer.self }
 
     var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
@@ -80,14 +80,28 @@ final class ViewerView: UIView {
     // MARK: - Gestures
 
     private func setupGestures() {
-        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(pan(_:))))
-        addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:))))
+        // The pan tracks one touch and the pinch runs at the same time, so
+        // a second finger can join a drag and zoom, as in the web library.
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = self
+        addGestureRecognizer(pan)
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:)))
+        pinch.delegate = self
+        addGestureRecognizer(pinch)
         // One-finger zoom: a tap primes a short window. A drag that starts
         // inside the window becomes a dolly that pivots on the tap point.
         let tap = UITapGestureRecognizer(target: self, action: #selector(primeTapZoom(_:)))
         tap.cancelsTouchesInView = false
         addGestureRecognizer(tap)
     }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    private var pinchActive = false
 
     private var lastGrab: CGPoint = .zero
     private var lastTapTime: CFTimeInterval = 0
@@ -127,6 +141,10 @@ final class ViewerView: UIView {
                                            anchorX: zoomAnchor.x,
                                            anchorY: zoomAnchor.y)
                 lastZoomY = location.y
+            } else if pinchActive {
+                // Two fingers are down: the pinch owns the camera. Keep the
+                // grab point current so rotation resumes without a jump.
+                lastGrab = point
             } else {
                 viewer?.rotateDx(lastGrab.x - point.x, dy: lastGrab.y - point.y)
                 lastGrab = point
@@ -158,6 +176,8 @@ final class ViewerView: UIView {
     @objc private func pinch(_ gesture: UIPinchGestureRecognizer) {
         switch gesture.state {
         case .began:
+            pinchActive = true
+            viewer?.endRotate()
             guard let state = pinchState(gesture) else { return }
             lastPinchDistance = state.distance
             lastPinchMid = state.mid
@@ -171,6 +191,7 @@ final class ViewerView: UIView {
             lastPinchDistance = state.distance
             lastPinchMid = state.mid
         default:
+            pinchActive = false
             viewer?.endPinch()
         }
     }
