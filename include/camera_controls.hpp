@@ -478,6 +478,14 @@ public:
         }
     }
 
+    /// Wheel dolly at the cursor position. Same delta units as
+    /// dollyWheelDelta; positions in the setViewport() units. Use
+    /// dollyWheelDelta directly to dolly without the anchor.
+    void mouseWheel(double deltaY, double x, double y) {
+        if (viewportH_ <= 0) return;
+        dollyWheelDeltaAnchored(deltaY, x, y, viewportW_, viewportH_, tanHalfFov_);
+    }
+
     void mouseUp() {
         switch (mouseAction_) {
         case MouseAction::Rotate:

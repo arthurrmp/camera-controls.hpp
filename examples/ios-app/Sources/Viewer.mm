@@ -224,6 +224,22 @@ static constexpr double kFovDegrees = 45.0;
     _controls.touchCancelled(touchId);
 }
 
+- (void)mouseDown:(int)button x:(double)x y:(double)y {
+    _controls.mouseDown(button, x, y);
+}
+
+- (void)mouseMovedX:(double)x y:(double)y {
+    _controls.mouseMoved(x, y);
+}
+
+- (void)mouseUp {
+    _controls.mouseUp();
+}
+
+- (void)mouseWheel:(double)deltaY x:(double)x y:(double)y {
+    _controls.mouseWheel(deltaY, x, y);
+}
+
 - (void)shutdown {
     if (!_engine) return;
     if (_asset) {

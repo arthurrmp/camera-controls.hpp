@@ -23,6 +23,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)touchEnded:(int64_t)touchId time:(double)time;
 - (void)touchCancelled:(int64_t)touchId;
 
+// Mouse forwarding, for the macOS example. button: 0 left, 1 middle,
+// 2 right (the library convention, not the NSEvent one).
+- (void)mouseDown:(int)button x:(double)x y:(double)y;
+- (void)mouseMovedX:(double)x y:(double)y;
+- (void)mouseUp;
+- (void)mouseWheel:(double)deltaY x:(double)x y:(double)y;
+
 @end
 
 NS_ASSUME_NONNULL_END

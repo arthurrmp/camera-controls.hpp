@@ -1,0 +1,58 @@
+name: CameraControlsExampleMac
+options:
+  bundleIdPrefix: com.example
+targets:
+  CameraControlsExampleMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources
+      - path: ../ios-app/Sources/Viewer.h
+      - path: ../ios-app/Sources/Viewer.mm
+      - path: ../ios-app/Resources
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        NSMainStoryboardFile: ""
+    settings:
+      base:
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/BridgingHeader.h
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/../../include"
+          - "$(PROJECT_DIR)/vendor/filament/include"
+        LIBRARY_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/vendor/filament/lib/$(CURRENT_ARCH)"
+        OTHER_LDFLAGS:
+          - "-lc++"
+          - "-lbackend"
+          - "-lbasis_transcoder"
+          - "-lbluegl"
+          - "-lbluevk"
+          - "-lcamutils"
+          - "-ldracodec"
+          - "-lfilabridge"
+          - "-lfilaflat"
+          - "-lfilament"
+          - "-lgeometry"
+          - "-lgltfio_core"
+          - "-libl"
+          - "-limage"
+          - "-lktxreader"
+          - "-lmeshoptimizer"
+          - "-lshaders"
+          - "-lsmol-v"
+          - "-lstb"
+          - "-luberarchive"
+          - "-luberzlib"
+          - "-lutils"
+          - "-lzstd"
+          - "-labseil"
+          - "-lperfetto"
+        CODE_SIGN_IDENTITY: "-"
+    dependencies:
+      - sdk: Metal.framework
+      - sdk: QuartzCore.framework
+      - sdk: Cocoa.framework
