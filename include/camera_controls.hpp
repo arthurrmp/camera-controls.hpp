@@ -1,0 +1,376 @@
+// camera-controls.hpp
+//
+// C++17 port of the touch controls from yomotsu/camera-controls
+// (https://github.com/yomotsu/camera-controls, MIT).
+//
+// https://github.com/arthurrmp/camera-controls.hpp
+//
+// The library is one header file. It has no dependencies. Send input
+// deltas to it, call update(dt) each frame, and apply getPosition(false)
+// and getTarget(false) to your camera. Use lookAt() to get a camera basis
+// that is stable at the poles.
+//
+// The API follows camera-controls v3.1.2. Differences that C++ makes
+// necessary:
+//   - property get/set pairs become functions: azimuthAngle(),
+//     polarAngle(), distance(); the setters map to rotateTo() and
+//     dollyTo()
+//   - methods return void, not a Promise
+//   - getPosition(), getTarget(), and getSpherical() return values
+//     instead of copying into an out object
+//
+// Input conventions (the same as in the web library):
+//   - drag deltas are (last - current), in pixels
+//   - rotation divides both axes by the viewport height
+//   - dolly deltas must be in density-independent pixels (iOS points or
+//     css pixels). Rotation and truck can use physical pixels if the
+//     viewport height is also physical. Only the ratio has an effect.
+
+#pragma once
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
+namespace camctl {
+
+struct Vec3 {
+    double x = 0, y = 0, z = 0;
+
+    Vec3 operator+(const Vec3 &o) const { return {x + o.x, y + o.y, z + o.z}; }
+    Vec3 operator-(const Vec3 &o) const { return {x - o.x, y - o.y, z - o.z}; }
+    Vec3 operator*(double s) const { return {x * s, y * s, z * s}; }
+    Vec3 &operator+=(const Vec3 &o) { x += o.x; y += o.y; z += o.z; return *this; }
+};
+
+inline Vec3 cross(const Vec3 &a, const Vec3 &b) {
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+inline double dot(const Vec3 &a, const Vec3 &b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+inline Vec3 normalize(const Vec3 &v) {
+    const double l = std::sqrt(dot(v, v));
+    return l > 0 ? v * (1.0 / l) : v;
+}
+
+class CameraControls {
+public:
+    static constexpr double kPi = 3.141592653589793;
+    static constexpr double kHalfPi = 1.5707963267948966;
+    static constexpr double kInfinity = std::numeric_limits<double>::infinity();
+
+    // Properties of the original library, with the v3.1.2 defaults.
+    double smoothTime = 0.25;
+    double draggingSmoothTime = 0.125;
+    double azimuthRotateSpeed = 1.0;
+    double polarRotateSpeed = 1.0;
+    double dollySpeed = 1.0;
+    double truckSpeed = 2.0;
+    double minDistance = std::numeric_limits<double>::epsilon();
+    double maxDistance = kInfinity;
+    double minPolarAngle = 0.0;
+    double maxPolarAngle = kPi;
+    double minAzimuthAngle = -kInfinity;
+    double maxAzimuthAngle = kInfinity;
+
+    // Property getters. The property setters of the original library map
+    // to rotateTo() and dollyTo().
+    double azimuthAngle() const { return theta_; }
+    double polarAngle() const { return phi_; }
+    double distance() const { return radius_; }
+
+    struct Spherical {
+        double radius, phi, theta;
+    };
+
+    Spherical getSpherical(bool receiveEndValue = true) const {
+        return receiveEndValue ? Spherical{radiusEnd_, phiEnd_, thetaEnd_}
+                               : Spherical{radius_, phi_, theta_};
+    }
+
+    Vec3 getTarget(bool receiveEndValue = true) const {
+        return receiveEndValue ? targetEnd_ : target_;
+    }
+
+    Vec3 getPosition(bool receiveEndValue = true) const {
+        const Spherical s = getSpherical(receiveEndValue);
+        const Vec3 t = getTarget(receiveEndValue);
+        const double sinPhi = std::sin(s.phi);
+        return {t.x + s.radius * sinPhi * std::sin(s.theta),
+                t.y + s.radius * std::cos(s.phi),
+                t.z + s.radius * sinPhi * std::cos(s.theta)};
+    }
+
+    // Methods of the original library.
+
+    void rotate(double azimuthAngle, double polarAngle, bool enableTransition = false) {
+        rotateTo(thetaEnd_ + azimuthAngle, phiEnd_ + polarAngle, enableTransition);
+    }
+
+    void rotateAzimuthTo(double azimuthAngle, bool enableTransition = false) {
+        rotateTo(azimuthAngle, phiEnd_, enableTransition);
+    }
+
+    void rotatePolarTo(double polarAngle, bool enableTransition = false) {
+        rotateTo(thetaEnd_, polarAngle, enableTransition);
+    }
+
+    void rotateTo(double azimuthAngle, double polarAngle, bool enableTransition = false) {
+        userRotating_ = false;
+        thetaEnd_ = std::clamp(azimuthAngle, minAzimuthAngle, maxAzimuthAngle);
+        phiEnd_ = std::clamp(polarAngle, minPolarAngle, maxPolarAngle);
+        phiEnd_ = std::clamp(phiEnd_, kMakeSafeEps, kPi - kMakeSafeEps);
+        if (!enableTransition) {
+            theta_ = thetaEnd_;
+            phi_ = phiEnd_;
+        }
+    }
+
+    void dolly(double distance, bool enableTransition = false) {
+        dollyTo(radiusEnd_ - distance, enableTransition);
+    }
+
+    void dollyTo(double distance, bool enableTransition = false) {
+        userDollying_ = false;
+        radiusEnd_ = std::clamp(distance, minDistance, maxDistance);
+        if (!enableTransition) radius_ = radiusEnd_;
+    }
+
+    void truck(double x, double y, bool enableTransition = false) {
+        Vec3 xAxis, yAxis, zAxis;
+        basisAxes(xAxis, yAxis, zAxis);
+        const Vec3 to = targetEnd_ + xAxis * x + yAxis * (-y);
+        moveTo(to.x, to.y, to.z, enableTransition);
+    }
+
+    void moveTo(double x, double y, double z, bool enableTransition = false) {
+        userTrucking_ = false;
+        targetEnd_ = {x, y, z};
+        clampTarget();
+        if (!enableTransition) target_ = targetEnd_;
+    }
+
+    void setTarget(double targetX, double targetY, double targetZ,
+                   bool enableTransition = false) {
+        const Vec3 pos = getPosition(true);
+        setLookAt(pos.x, pos.y, pos.z, targetX, targetY, targetZ, enableTransition);
+        phiEnd_ = std::clamp(phiEnd_, minPolarAngle, maxPolarAngle);
+    }
+
+    void setPosition(double positionX, double positionY, double positionZ,
+                     bool enableTransition = false) {
+        setLookAt(positionX, positionY, positionZ,
+                  targetEnd_.x, targetEnd_.y, targetEnd_.z, enableTransition);
+    }
+
+    void setLookAt(double positionX, double positionY, double positionZ,
+                   double targetX, double targetY, double targetZ,
+                   bool enableTransition = false) {
+        userRotating_ = userDollying_ = userTrucking_ = false;
+        targetEnd_ = {targetX, targetY, targetZ};
+        const Vec3 rel = Vec3{positionX, positionY, positionZ} - targetEnd_;
+        const double r = std::sqrt(dot(rel, rel));
+        radiusEnd_ = r;
+        thetaEnd_ = std::atan2(rel.x, rel.z);
+        phiEnd_ = r == 0.0 ? 0.0 : std::acos(std::clamp(rel.y / r, -1.0, 1.0));
+        if (!enableTransition) {
+            target_ = targetEnd_;
+            theta_ = thetaEnd_;
+            phi_ = phiEnd_;
+            radius_ = radiusEnd_;
+        }
+    }
+
+    void setBoundary(const Vec3 &min, const Vec3 &max) {
+        boundaryMin_ = min;
+        boundaryMax_ = max;
+        clampTarget();
+    }
+
+    void setBoundary() {
+        boundaryMin_ = {-kInfinity, -kInfinity, -kInfinity};
+        boundaryMax_ = {kInfinity, kInfinity, kInfinity};
+    }
+
+    /// Advance the damped state. Returns true if the state changed.
+    bool update(double delta) {
+        const double dt = std::max(delta, 1e-6);
+        const double prevTheta = theta_, prevPhi = phi_, prevRadius = radius_;
+        const Vec3 prevTarget = target_;
+
+        stepAxis(theta_, thetaEnd_, thetaVel_, userRotating_, dt);
+        stepAxis(phi_, phiEnd_, phiVel_, userRotating_, dt);
+        stepAxis(radius_, radiusEnd_, radiusVel_, userDollying_, dt);
+        // Post-damp clamps (Spherical.makeSafe in three.js): the overshoot
+        // correction can push the smoothed value past the pole for a frame,
+        // which flips sin(phi) and mirrors the camera.
+        phi_ = std::clamp(phi_, std::max(minPolarAngle, kMakeSafeEps),
+                          std::min(maxPolarAngle, kPi - kMakeSafeEps));
+        radius_ = std::clamp(radius_, minDistance, maxDistance);
+
+        const Vec3 dTarget = targetEnd_ - target_;
+        if (std::abs(dTarget.x) < kEpsilon && std::abs(dTarget.y) < kEpsilon &&
+            std::abs(dTarget.z) < kEpsilon) {
+            targetVel_ = {};
+            target_ = targetEnd_;
+        } else {
+            const double st = userTrucking_ ? draggingSmoothTime : smoothTime;
+            target_.x = smoothDamp(target_.x, targetEnd_.x, targetVel_.x, st, kMaxSpeed, dt);
+            target_.y = smoothDamp(target_.y, targetEnd_.y, targetVel_.y, st, kMaxSpeed, dt);
+            target_.z = smoothDamp(target_.z, targetEnd_.z, targetVel_.z, st, kMaxSpeed, dt);
+        }
+
+        return theta_ != prevTheta || phi_ != prevPhi || radius_ != prevRadius ||
+               target_.x != prevTarget.x || target_.y != prevTarget.y ||
+               target_.z != prevTarget.z;
+    }
+
+    // Input layer. The original library reads pointer events itself; a
+    // native application sends the same deltas through these functions.
+    // Call the end functions when the gesture ends, so that update() goes
+    // back from draggingSmoothTime to smoothTime.
+
+    /// One-finger drag. Deltas are (last - current) pixels.
+    void rotatePixels(double dxPx, double dyPx, double viewportHeight) {
+        rotate(2.0 * kPi * azimuthRotateSpeed * dxPx / viewportHeight,
+               2.0 * kPi * polarRotateSpeed * dyPx / viewportHeight, true);
+        userRotating_ = true;
+    }
+
+    /// Pinch. dollyDeltaPx = previous pinch distance - current, in
+    /// density-independent pixels.
+    void dollyPinchDelta(double dollyDeltaPx) {
+        const double delta = dollyDeltaPx * (1.0 / 8.0); // TOUCH_DOLLY_FACTOR
+        const double scale = std::pow(0.95, -delta * dollySpeed);
+        radiusEnd_ = std::clamp(radiusEnd_ * scale, minDistance, maxDistance);
+        userDollying_ = true;
+    }
+
+    /// One-finger zoom with an anchor: the world point under the screen
+    /// anchor stays in place while the camera dollies.
+    void dollyDeltaAnchored(double deltaPx, double anchorXPx, double anchorYPx,
+                            double viewportW, double viewportH, double tanHalfFov) {
+        const double delta = deltaPx * (1.0 / 8.0);
+        const double scale = std::pow(0.95, -delta * dollySpeed);
+        const double oldRadius = radiusEnd_;
+        radiusEnd_ = std::clamp(radiusEnd_ * scale, minDistance, maxDistance);
+        const double applied = oldRadius > 0 ? radiusEnd_ / oldRadius : 1.0;
+        userDollying_ = true;
+
+        const double aspect = viewportW / viewportH;
+        const double nx = 2.0 * anchorXPx / viewportW - 1.0;
+        const double ny = 1.0 - 2.0 * anchorYPx / viewportH;
+        const double offsetX = nx * tanHalfFov * aspect * oldRadius;
+        const double offsetY = ny * tanHalfFov * oldRadius;
+
+        Vec3 xAxis, yAxis, zAxis;
+        basisAxes(xAxis, yAxis, zAxis);
+        targetEnd_ += (xAxis * offsetX + yAxis * offsetY) * (1.0 - applied);
+        clampTarget();
+        userTrucking_ = true;
+    }
+
+    /// Two-finger midpoint drag (the truck half of TOUCH_DOLLY_TRUCK).
+    void truckPixels(double dxPx, double dyPx, double viewportHeight,
+                     double tanHalfFov) {
+        const double targetDistance = radius_ * tanHalfFov;
+        const double truckX = truckSpeed * dxPx * targetDistance / viewportHeight;
+        const double pedestalY = truckSpeed * dyPx * targetDistance / viewportHeight;
+        Vec3 xAxis, yAxis, zAxis;
+        basisAxes(xAxis, yAxis, zAxis);
+        targetEnd_ += xAxis * truckX + yAxis * (-pedestalY);
+        clampTarget();
+        userTrucking_ = true;
+    }
+
+    void endRotate() { userRotating_ = false; }
+    void endDolly() { userDollying_ = false; }
+    void endTruck() { userTrucking_ = false; }
+
+    /// Verbatim SmoothDamp from camera-controls (Game Programming Gems 4).
+    static double smoothDamp(double current, double targetValue, double &vel,
+                             double smoothTime, double maxSpeed, double dt) {
+        smoothTime = std::max(0.0001, smoothTime);
+        const double omega = 2.0 / smoothTime;
+        const double x = omega * dt;
+        const double exp = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+        double change = current - targetValue;
+        const double originalTo = targetValue;
+        const double maxChange = maxSpeed * smoothTime;
+        change = std::clamp(change, -maxChange, maxChange);
+        targetValue = current - change;
+        const double temp = (vel + omega * change) * dt;
+        vel = (vel - omega * temp) * exp;
+        double output = targetValue + (change + temp) * exp;
+        if ((originalTo - current > 0.0) == (output > originalTo)) {
+            output = originalTo;
+            vel = (output - originalTo) / dt;
+        }
+        return output;
+    }
+
+    /// Camera basis for a look-at camera with +Y up. The three vectors are
+    /// the columns of the camera model matrix. This uses the three.js
+    /// Matrix4.lookAt construction, which is stable at the poles. Some
+    /// engine lookAt functions (for example Filament's) change the up
+    /// vector near the poles, which rotates the view for one frame.
+    struct Basis {
+        Vec3 x, y, z;
+    };
+
+    static Basis lookAt(const Vec3 &eye, const Vec3 &target) {
+        Vec3 zAxis = eye - target;
+        if (dot(zAxis, zAxis) == 0.0) zAxis.z = 1.0;
+        zAxis = normalize(zAxis);
+        Vec3 xAxis = cross(Vec3{0, 1, 0}, zAxis);
+        if (dot(xAxis, xAxis) < 1e-24) {
+            zAxis.z += 0.0001;
+            zAxis = normalize(zAxis);
+            xAxis = cross(Vec3{0, 1, 0}, zAxis);
+        }
+        xAxis = normalize(xAxis);
+        return {xAxis, cross(zAxis, xAxis), zAxis};
+    }
+
+private:
+    static constexpr double kEpsilon = 1e-5;     // camera-controls approxZero
+    static constexpr double kMakeSafeEps = 1e-6; // three.js Spherical.makeSafe
+    static constexpr double kMaxSpeed = 1e300;
+
+    // Smoothed spherical state (theta about +Y, phi from +Y) and the
+    // damping end values, as in the original library's _spherical and
+    // _sphericalEnd.
+    double theta_ = 0, thetaEnd_ = 0, thetaVel_ = 0;
+    double phi_ = kHalfPi, phiEnd_ = kHalfPi, phiVel_ = 0;
+    double radius_ = 1, radiusEnd_ = 1, radiusVel_ = 0;
+    Vec3 target_, targetEnd_, targetVel_;
+    Vec3 boundaryMin_{-kInfinity, -kInfinity, -kInfinity};
+    Vec3 boundaryMax_{kInfinity, kInfinity, kInfinity};
+    bool userRotating_ = false, userDollying_ = false, userTrucking_ = false;
+
+    void stepAxis(double &value, double end, double &vel, bool dragging, double dt) const {
+        if (std::abs(end - value) < kEpsilon) {
+            vel = 0;
+            value = end;
+        } else {
+            value = smoothDamp(value, end, vel,
+                               dragging ? draggingSmoothTime : smoothTime,
+                               kMaxSpeed, dt);
+        }
+    }
+
+    void clampTarget() {
+        targetEnd_ = {std::clamp(targetEnd_.x, boundaryMin_.x, boundaryMax_.x),
+                      std::clamp(targetEnd_.y, boundaryMin_.y, boundaryMax_.y),
+                      std::clamp(targetEnd_.z, boundaryMin_.z, boundaryMax_.z)};
+    }
+
+    void basisAxes(Vec3 &xAxis, Vec3 &yAxis, Vec3 &zAxis) const {
+        const double sp = std::sin(phi_), cp = std::cos(phi_);
+        const double st = std::sin(theta_), ct = std::cos(theta_);
+        zAxis = {sp * st, cp, sp * ct}; // target -> eye
+        xAxis = normalize(cross(Vec3{0, 1, 0}, zAxis));
+        yAxis = cross(zAxis, xAxis);
+    }
+};
+
+} // namespace camctl
