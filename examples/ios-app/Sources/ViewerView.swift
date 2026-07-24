@@ -13,13 +13,28 @@ final class ViewerView: UIView {
     private var displayLink: CADisplayLink?
     private var lastTimestamp: CFTimeInterval = 0
 
+    /// Called about twice per second with (frames per second, frame ms).
+    var onStats: ((Double, Double) -> Void)?
+    /// Called once, on the first orbit or pinch.
+    var onFirstInteraction: (() -> Void)?
+    private var statFrames = 0
+    private var statStart: CFTimeInterval = 0
+    private var interacted = false
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         metalLayer.pixelFormat = .bgra8Unorm
         viewer = Viewer(layer: metalLayer)
-        if let url = Bundle.main.url(forResource: "cube", withExtension: "glb"),
+        // The Avocado comes from setup.sh; the cube is the committed
+        // fallback so the app builds without it.
+        if let url = Bundle.main.url(forResource: "Avocado", withExtension: "glb")
+            ?? Bundle.main.url(forResource: "cube", withExtension: "glb"),
            let data = try? Data(contentsOf: url) {
             _ = viewer?.loadModel(data)
+        }
+        if let url = Bundle.main.url(forResource: "default_env_ibl", withExtension: "ktx"),
+           let data = try? Data(contentsOf: url) {
+            _ = viewer?.loadEnvironment(data)
         }
         setupGestures()
     }
@@ -43,6 +58,22 @@ final class ViewerView: UIView {
         let dt = lastTimestamp == 0 ? 1.0 / 60.0 : link.timestamp - lastTimestamp
         lastTimestamp = link.timestamp
         viewer?.render(dt)
+
+        if statStart == 0 { statStart = link.timestamp }
+        statFrames += 1
+        let elapsed = link.timestamp - statStart
+        if elapsed >= 0.5 {
+            let fps = Double(statFrames) / elapsed
+            onStats?(fps, 1000.0 / fps)
+            statFrames = 0
+            statStart = link.timestamp
+        }
+    }
+
+    private func noteInteraction() {
+        guard !interacted else { return }
+        interacted = true
+        onFirstInteraction?()
     }
 
     override func layoutSubviews() {
@@ -87,6 +118,7 @@ final class ViewerView: UIView {
         let point = CGPoint(x: location.x * scale, y: location.y * scale)
         switch gesture.state {
         case .began:
+            noteInteraction()
             let sinceTap = CACurrentMediaTime() - lastTapTime
             let nearTap = hypot(location.x - lastTapLocation.x,
                                 location.y - lastTapLocation.y) < 60
@@ -136,6 +168,7 @@ final class ViewerView: UIView {
     @objc private func pinch(_ gesture: UIPinchGestureRecognizer) {
         switch gesture.state {
         case .began:
+            noteInteraction()
             guard let state = pinchState(gesture) else { return }
             lastPinchDistance = state.distance
             lastPinchMid = state.mid

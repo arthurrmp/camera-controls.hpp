@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithLayer:(CAMetalLayer *)layer;
 - (BOOL)loadModel:(NSData *)glb;
+- (BOOL)loadEnvironment:(NSData *)ktx;
 - (void)resizeWidth:(uint32_t)width height:(uint32_t)height;
 - (void)render:(double)dt;
 - (void)shutdown;

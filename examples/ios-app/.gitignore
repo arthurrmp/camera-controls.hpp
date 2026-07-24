@@ -1,3 +1,5 @@
 vendor/
 *.xcodeproj
 Info.plist
+Resources/Avocado.glb
+Resources/default_env_ibl.ktx

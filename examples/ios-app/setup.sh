@@ -29,3 +29,13 @@ for lib in "${LIBS[@]}"; do
 done
 
 echo "Vendored Filament $FILAMENT_VERSION into $VENDOR_DIR"
+
+# Example assets, not committed: the Avocado model (Khronos glTF sample,
+# CC0) and Filament's default environment for the image-based light.
+RES_DIR="$APP_DIR/Resources"
+echo "Downloading example assets..."
+curl -sL -o "$RES_DIR/Avocado.glb" \
+  "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Avocado/glTF-Binary/Avocado.glb"
+curl -sL -o "$RES_DIR/default_env_ibl.ktx" \
+  "https://raw.githubusercontent.com/google/filament/$FILAMENT_VERSION/docs/web/assets/helmet/default_env/default_env_ibl.ktx"
+echo "Done."
