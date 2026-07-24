@@ -1,14 +1,14 @@
 // camera-controls.hpp
 //
-// C++17 port of the touch controls from yomotsu/camera-controls
+// C++17 port of the camera controls from yomotsu/camera-controls
 // (https://github.com/yomotsu/camera-controls, MIT).
 //
 // https://github.com/arthurrmp/camera-controls.hpp
 //
-// The library is one header file. It has no dependencies. Send input
-// deltas to it, call update(dt) each frame, and apply getPosition(false)
-// and getTarget(false) to your camera. Use lookAt() to get a camera basis
-// that is stable at the poles.
+// The library is one header file. It has no dependencies. Forward touch
+// or mouse events to it, call update(dt) each frame, and apply
+// getPosition(false) and getTarget(false) to your camera. Use lookAt()
+// to get a camera basis that is stable at the poles.
 //
 // The API follows camera-controls v3.1.2. Differences that C++ makes
 // necessary:

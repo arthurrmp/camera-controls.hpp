@@ -1,8 +1,9 @@
 # camera-controls.hpp
 
-C++17 port of the touch controls from
+C++17 port of the camera controls from
 [yomotsu/camera-controls](https://github.com/yomotsu/camera-controls), the
-damped orbit-control library for three.js.
+damped orbit-control library for three.js. Touch and mouse input, the
+damped orbit, dolly, and truck movement, and the fitting functions.
 
 The library is one header file with no dependencies. You can use it with
 [Filament](https://github.com/google/filament), Metal, Vulkan, OpenGL, or
@@ -44,8 +45,8 @@ To build and run the example:
 cd examples && c++ -std=c++17 -I../include minimal.cpp -o minimal && ./minimal
 ```
 
-The example does not need a renderer. It prints the camera state for a drag,
-a release, and a pinch.
+The example does not need a renderer. It prints the camera state for a
+drag, a release, a pinch, and a `fitToBox`.
 
 The example applications, from the most complete to the smallest:
 
@@ -91,9 +92,10 @@ gesture itself. The input layers do the same natively; call
   `touchEnded` / `touchCancelled`. A finger can join or leave a gesture
   mid-drag, as on the web.
 - Mouse: forward `mouseDown` / `mouseMoved` / `mouseUp`, and the wheel to
-  `dollyWheelDelta` or `dollyWheelDeltaAnchored`. The `mouseButtons`
-  mapping has the original defaults: left rotates, middle dollies, right
-  trucks; `dollyDragInverted` is ported too.
+  `mouseWheel(deltaY, x, y)` for zoom at the cursor, or to
+  `dollyWheelDelta` for a plain dolly. The `mouseButtons` mapping has the
+  original defaults: left rotates, middle dollies, right trucks;
+  `dollyDragInverted` is ported too.
 
 Under them, the delta functions (`rotatePixels`, `dollyPinchDelta`,
 `truckPixels`, `endRotate` / `endDolly` / `endTruck`) serve custom input.
@@ -102,7 +104,7 @@ Under them, the delta functions (`rotatePixels`, `dollyPinchDelta`,
 
 | Input | Units | Reason |
 | --- | --- | --- |
-| touch layer positions and `setViewport` | density-independent pixels (iOS points, Android dp, css pixels) | the same units the web library gets from the DOM |
+| touch and mouse layer positions, and `setViewport` | density-independent pixels (iOS points, Android dp, css pixels) | the same units the web library gets from the DOM |
 | `rotatePixels`, `truckPixels` deltas | any, the same as `viewportHeight` | only the ratio has an effect |
 | `dollyPinchDelta`, `dollyDeltaAnchored` delta | density-independent pixels (iOS points, css pixels) | the dolly curve `0.95^(px/8)` uses absolute pixels |
 | `dollyWheelDelta`, `dollyWheelDeltaAnchored` delta | pixel-mode wheel units, positive = down | the curve is `0.95^(units/10)`, the macOS feel; divide by 3 for the other systems' feel |
@@ -135,9 +137,10 @@ Under them, the delta functions (`rotatePixels`, `dollyPinchDelta`,
 
 These are not in the original library:
 
-- `dollyDeltaAnchored`: one-finger zoom that keeps the point under a screen
-  anchor in place. This is the double-press-and-drag gesture from map
-  applications.
+- The anchored one-finger zoom: a drag that keeps the point under a
+  screen anchor in place. In the touch layer this is the
+  double-tap-and-drag gesture from map applications; the low-level entry
+  is `dollyDeltaAnchored`.
 - `CameraControls::lookAt()`: a camera basis from eye and target, with the
   three.js `Matrix4.lookAt` construction. Use it if the lookAt function of
   your engine is not stable when the view direction is almost vertical.
