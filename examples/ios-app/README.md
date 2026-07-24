@@ -3,9 +3,9 @@
 A SwiftUI app that renders the Khronos Avocado glTF model with
 [Filament](https://github.com/google/filament) and moves the camera with
 `camera-controls.hpp`. Gestures: one-finger orbit, pinch zoom, and
-tap-then-drag one-finger zoom that pivots on the tap point. An overlay
-shows the frame rate and a short gesture guide that goes away on the
-first interaction.
+double-tap-then-drag one-finger zoom that pivots on the tap point. A
+Liquid Glass overlay shows the frame rate and a short gesture guide
+(this is why the deployment target is iOS 26).
 
 The app shows the full integration surface:
 

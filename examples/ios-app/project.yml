@@ -5,7 +5,8 @@ targets:
   CameraControlsExample:
     type: application
     platform: iOS
-    deploymentTarget: "16.0"
+    # Liquid Glass (glassEffect) needs iOS 26.
+    deploymentTarget: "26.0"
     sources:
       - path: Sources
       - path: Resources

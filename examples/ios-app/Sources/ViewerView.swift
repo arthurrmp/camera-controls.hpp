@@ -15,11 +15,8 @@ final class ViewerView: UIView {
 
     /// Called about twice per second with (frames per second, frame ms).
     var onStats: ((Double, Double) -> Void)?
-    /// Called once, on the first orbit or pinch.
-    var onFirstInteraction: (() -> Void)?
     private var statFrames = 0
     private var statStart: CFTimeInterval = 0
-    private var interacted = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -70,12 +67,6 @@ final class ViewerView: UIView {
         }
     }
 
-    private func noteInteraction() {
-        guard !interacted else { return }
-        interacted = true
-        onFirstInteraction?()
-    }
-
     override func layoutSubviews() {
         super.layoutSubviews()
         let scale = window?.screen.scale ?? UIScreen.main.scale
@@ -118,7 +109,6 @@ final class ViewerView: UIView {
         let point = CGPoint(x: location.x * scale, y: location.y * scale)
         switch gesture.state {
         case .began:
-            noteInteraction()
             let sinceTap = CACurrentMediaTime() - lastTapTime
             let nearTap = hypot(location.x - lastTapLocation.x,
                                 location.y - lastTapLocation.y) < 60
@@ -168,7 +158,6 @@ final class ViewerView: UIView {
     @objc private func pinch(_ gesture: UIPinchGestureRecognizer) {
         switch gesture.state {
         case .began:
-            noteInteraction()
             guard let state = pinchState(gesture) else { return }
             lastPinchDistance = state.distance
             lastPinchMid = state.mid
