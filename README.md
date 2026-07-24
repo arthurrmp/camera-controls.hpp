@@ -47,11 +47,19 @@ cd examples && c++ -std=c++17 -I../include minimal.cpp -o minimal && ./minimal
 The example does not need a renderer. It prints the camera state for a drag,
 a release, and a pinch.
 
-See [`examples/ios-filament.md`](examples/ios-filament.md) for an
-integration with UIKit and Filament, [`examples/ios-app`](examples/ios-app)
-for a complete SwiftUI application with the touch layer, and
-[`examples/mac-app`](examples/mac-app) for the macOS version with the
-mouse layer.
+The example applications, from the most complete to the smallest:
+
+- [`examples/ios-app`](examples/ios-app): SwiftUI + Filament, the touch
+  layer, a glTF model with image-based lighting
+- [`examples/mac-app`](examples/mac-app): the macOS version, with the
+  mouse layer
+- [`examples/metal-app`](examples/metal-app): plain Metal, no engine and
+  nothing to download; shows the view matrix built from the lookAt basis
+- [`examples/vulkan-app`](examples/vulkan-app): plain Vulkan with GLFW,
+  cross-platform; on macOS it runs through MoltenVK
+
+[`examples/ios-filament.md`](examples/ios-filament.md) documents the
+UIKit + Filament integration in prose.
 
 To use the library as a dependency instead of copying the header: the repo
 is a Swift package (`Package.swift`) and a CMake project (an `INTERFACE`

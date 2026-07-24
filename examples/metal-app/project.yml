@@ -1,0 +1,24 @@
+name: CameraControlsExampleMetal
+options:
+  bundleIdPrefix: com.example
+targets:
+  CameraControlsExampleMetal:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources
+    info:
+      path: Info.plist
+      properties: {}
+    settings:
+      base:
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/BridgingHeader.h
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/../../include"
+        CODE_SIGN_IDENTITY: "-"
+    dependencies:
+      - sdk: Metal.framework
+      - sdk: QuartzCore.framework
+      - sdk: Cocoa.framework

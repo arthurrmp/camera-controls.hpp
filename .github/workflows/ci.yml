@@ -31,3 +31,12 @@ jobs:
           cmake -B build -DCAMERA_CONTROLS_BUILD_EXAMPLE=ON
           cmake --build build
           ./build/minimal
+
+  vulkan-example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libvulkan-dev libglfw3-dev
+      - run: |
+          cmake -B build -S examples/vulkan-app
+          cmake --build build
