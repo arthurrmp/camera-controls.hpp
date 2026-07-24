@@ -52,6 +52,54 @@ inline Vec3 normalize(const Vec3 &v) {
     return l > 0 ? v * (1.0 / l) : v;
 }
 
+/// Minimal quaternion. fitToBox() uses it to orient the box in view space.
+struct Quat {
+    double x = 0, y = 0, z = 0, w = 1;
+
+    static Quat fromUnitVectors(const Vec3 &from, const Vec3 &to) {
+        const double r = dot(from, to) + 1.0;
+        Quat q;
+        if (r < 1e-12) {
+            // The vectors point in opposite directions.
+            if (std::abs(from.x) > std::abs(from.z)) q = {-from.y, from.x, 0.0, 0.0};
+            else q = {0.0, -from.z, from.y, 0.0};
+        } else {
+            const Vec3 c = cross(from, to);
+            q = {c.x, c.y, c.z, r};
+        }
+        const double l = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+        return {q.x / l, q.y / l, q.z / l, q.w / l};
+    }
+
+    static Quat fromAxisAngle(const Vec3 &axis, double angle) {
+        const double s = std::sin(angle * 0.5);
+        return {axis.x * s, axis.y * s, axis.z * s, std::cos(angle * 0.5)};
+    }
+
+    Quat operator*(const Quat &b) const {
+        return {w * b.x + x * b.w + y * b.z - z * b.y,
+                w * b.y - x * b.z + y * b.w + z * b.x,
+                w * b.z + x * b.y - y * b.x + z * b.w,
+                w * b.w - x * b.x - y * b.y - z * b.z};
+    }
+
+    Quat conjugate() const { return {-x, -y, -z, w}; }
+
+    Vec3 rotate(const Vec3 &v) const {
+        const Vec3 qv{x, y, z};
+        const Vec3 t = cross(qv, v) * 2.0;
+        return v + t * w + cross(qv, t);
+    }
+};
+
+struct FitToOptions {
+    bool cover = false;
+    double paddingLeft = 0;
+    double paddingRight = 0;
+    double paddingBottom = 0;
+    double paddingTop = 0;
+};
+
 class CameraControls {
 public:
     static constexpr double kPi = 3.141592653589793;
@@ -191,6 +239,74 @@ public:
         boundaryMax_ = {kInfinity, kInfinity, kInfinity};
     }
 
+    /// Fit the view to an axis-aligned box. The camera first rotates to the
+    /// nearest 90-degree view, as in the original library. The library has
+    /// no camera object, so the caller passes the vertical field of view in
+    /// radians and the viewport aspect ratio.
+    void fitToBox(const Vec3 &boxMin, const Vec3 &boxMax, bool enableTransition,
+                  double fovY, double aspect, const FitToOptions &options = {}) {
+        const double theta = roundToStep(thetaEnd_, kHalfPi);
+        const double phi = roundToStep(phiEnd_, kHalfPi);
+        rotateTo(theta, phi, enableTransition);
+
+        const Vec3 normal = {std::sin(phiEnd_) * std::sin(thetaEnd_),
+                             std::cos(phiEnd_),
+                             std::sin(phiEnd_) * std::cos(thetaEnd_)};
+        Quat rotation = Quat::fromUnitVectors(normal, {0, 0, 1});
+        const bool viewFromPolar = std::abs(std::abs(normal.y) - 1.0) < kEpsilon;
+        const Quat yaw = Quat::fromAxisAngle({0, 1, 0}, theta);
+        if (viewFromPolar) rotation = rotation * yaw;
+
+        // The box corners in view space give the oriented bounding box.
+        Vec3 bbMin{kInfinity, kInfinity, kInfinity};
+        Vec3 bbMax{-kInfinity, -kInfinity, -kInfinity};
+        for (int i = 0; i < 8; i++) {
+            const Vec3 corner{(i & 1) ? boxMax.x : boxMin.x,
+                              (i & 2) ? boxMax.y : boxMin.y,
+                              (i & 4) ? boxMax.z : boxMin.z};
+            const Vec3 p = rotation.rotate(corner);
+            bbMin = {std::min(bbMin.x, p.x), std::min(bbMin.y, p.y), std::min(bbMin.z, p.z)};
+            bbMax = {std::max(bbMax.x, p.x), std::max(bbMax.y, p.y), std::max(bbMax.z, p.z)};
+        }
+        bbMin.x -= options.paddingLeft;
+        bbMin.y -= options.paddingBottom;
+        bbMax.x += options.paddingRight;
+        bbMax.y += options.paddingTop;
+
+        Quat back = Quat::fromUnitVectors({0, 0, 1}, normal);
+        if (viewFromPolar) back = yaw.conjugate() * back;
+
+        const Vec3 size = bbMax - bbMin;
+        const Vec3 center = back.rotate((bbMin + bbMax) * 0.5);
+        const double distance =
+            getDistanceToFitBox(size.x, size.y, size.z, fovY, aspect, options.cover);
+        moveTo(center.x, center.y, center.z, enableTransition);
+        dollyTo(distance, enableTransition);
+    }
+
+    /// Fit the view to a sphere.
+    void fitToSphere(const Vec3 &center, double radius, bool enableTransition,
+                     double fovY, double aspect) {
+        moveTo(center.x, center.y, center.z, enableTransition);
+        dollyTo(getDistanceToFitSphere(radius, fovY, aspect), enableTransition);
+    }
+
+    double getDistanceToFitBox(double width, double height, double depth,
+                               double fovY, double aspect, bool cover = false) const {
+        const double boundingRectAspect = width / height;
+        const double heightToFit =
+            (cover ? boundingRectAspect > aspect : boundingRectAspect < aspect)
+                ? height
+                : width / aspect;
+        return heightToFit * 0.5 / std::tan(fovY * 0.5) + depth * 0.5;
+    }
+
+    double getDistanceToFitSphere(double radius, double fovY, double aspect) const {
+        const double hFov = std::atan(std::tan(fovY * 0.5) * aspect) * 2.0;
+        const double fov = aspect > 1.0 ? fovY : hFov;
+        return radius / std::sin(fov * 0.5);
+    }
+
     /// Advance the damped state. Returns true if the state changed.
     bool update(double delta) {
         const double dt = std::max(delta, 1e-6);
@@ -239,9 +355,16 @@ public:
     /// Pinch. dollyDeltaPx = previous pinch distance - current, in
     /// density-independent pixels.
     void dollyPinchDelta(double dollyDeltaPx) {
-        const double delta = dollyDeltaPx * (1.0 / 8.0); // TOUCH_DOLLY_FACTOR
-        const double scale = std::pow(0.95, -delta * dollySpeed);
-        radiusEnd_ = std::clamp(radiusEnd_ * scale, minDistance, maxDistance);
+        dollyScaled(dollyDeltaPx * (1.0 / 8.0)); // TOUCH_DOLLY_FACTOR
+        userDollying_ = true;
+    }
+
+    /// Mouse wheel. deltaY is the wheel delta of a pixel-mode wheel event;
+    /// positive scrolls down and dollies out. The web library divides a
+    /// macOS wheel delta by 10 and other systems by 30; this function uses
+    /// 10, so divide by 3 first to get the other feel.
+    void dollyWheelDelta(double deltaY) {
+        dollyScaled(deltaY * (1.0 / 10.0));
         userDollying_ = true;
     }
 
@@ -249,24 +372,16 @@ public:
     /// anchor stays in place while the camera dollies.
     void dollyDeltaAnchored(double deltaPx, double anchorXPx, double anchorYPx,
                             double viewportW, double viewportH, double tanHalfFov) {
-        const double delta = deltaPx * (1.0 / 8.0);
-        const double scale = std::pow(0.95, -delta * dollySpeed);
-        const double oldRadius = radiusEnd_;
-        radiusEnd_ = std::clamp(radiusEnd_ * scale, minDistance, maxDistance);
-        const double applied = oldRadius > 0 ? radiusEnd_ / oldRadius : 1.0;
-        userDollying_ = true;
+        dollyAnchored(deltaPx * (1.0 / 8.0), anchorXPx, anchorYPx,
+                      viewportW, viewportH, tanHalfFov);
+    }
 
-        const double aspect = viewportW / viewportH;
-        const double nx = 2.0 * anchorXPx / viewportW - 1.0;
-        const double ny = 1.0 - 2.0 * anchorYPx / viewportH;
-        const double offsetX = nx * tanHalfFov * aspect * oldRadius;
-        const double offsetY = ny * tanHalfFov * oldRadius;
-
-        Vec3 xAxis, yAxis, zAxis;
-        basisAxes(xAxis, yAxis, zAxis);
-        targetEnd_ += (xAxis * offsetX + yAxis * offsetY) * (1.0 - applied);
-        clampTarget();
-        userTrucking_ = true;
+    /// Wheel zoom with an anchor, for zoom-at-cursor on desktop. Same
+    /// units as dollyWheelDelta; the anchor is the cursor position.
+    void dollyWheelDeltaAnchored(double deltaY, double anchorXPx, double anchorYPx,
+                                 double viewportW, double viewportH, double tanHalfFov) {
+        dollyAnchored(deltaY * (1.0 / 10.0), anchorXPx, anchorYPx,
+                      viewportW, viewportH, tanHalfFov);
     }
 
     /// Two-finger midpoint drag (the truck half of TOUCH_DOLLY_TRUCK).
@@ -346,6 +461,35 @@ private:
     Vec3 boundaryMin_{-kInfinity, -kInfinity, -kInfinity};
     Vec3 boundaryMax_{kInfinity, kInfinity, kInfinity};
     bool userRotating_ = false, userDollying_ = false, userTrucking_ = false;
+
+    static double roundToStep(double value, double step) {
+        return std::round(value / step) * step;
+    }
+
+    void dollyScaled(double delta) {
+        const double scale = std::pow(0.95, -delta * dollySpeed);
+        radiusEnd_ = std::clamp(radiusEnd_ * scale, minDistance, maxDistance);
+    }
+
+    void dollyAnchored(double delta, double anchorXPx, double anchorYPx,
+                       double viewportW, double viewportH, double tanHalfFov) {
+        const double oldRadius = radiusEnd_;
+        dollyScaled(delta);
+        const double applied = oldRadius > 0 ? radiusEnd_ / oldRadius : 1.0;
+        userDollying_ = true;
+
+        const double aspect = viewportW / viewportH;
+        const double nx = 2.0 * anchorXPx / viewportW - 1.0;
+        const double ny = 1.0 - 2.0 * anchorYPx / viewportH;
+        const double offsetX = nx * tanHalfFov * aspect * oldRadius;
+        const double offsetY = ny * tanHalfFov * oldRadius;
+
+        Vec3 xAxis, yAxis, zAxis;
+        basisAxes(xAxis, yAxis, zAxis);
+        targetEnd_ += (xAxis * offsetX + yAxis * offsetY) * (1.0 - applied);
+        clampTarget();
+        userTrucking_ = true;
+    }
 
     void stepAxis(double &value, double end, double &vel, bool dragging, double dt) const {
         if (std::abs(end - value) < kEpsilon) {

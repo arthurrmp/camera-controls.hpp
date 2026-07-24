@@ -66,12 +66,19 @@ v3.1.2. Differences that C++ makes necessary:
 - `getPosition()`, `getTarget()`, and `getSpherical()` return values
   instead of copying into an out object. As in the original, they return
   the transition end values; pass `false` for the current damped values.
-- `setBoundary()` takes two `Vec3` corners instead of a `THREE.Box3`.
+- `setBoundary()` and `fitToBox()` take two `Vec3` corners instead of a
+  `THREE.Box3`.
+- The library has no camera object, so `fitToBox()`, `fitToSphere()`, and
+  the `getDistanceToFit*()` functions take the vertical field of view in
+  radians and the viewport aspect ratio as arguments.
 
-The original library reads DOM pointer events itself. A native application
-sends the same deltas through the input layer instead: `rotatePixels`,
-`dollyPinchDelta`, `truckPixels`, and the `endRotate` / `endDolly` /
-`endTruck` functions that end a gesture.
+The original library reads DOM pointer and wheel events itself. A native
+application sends the same deltas through the input layer instead:
+
+- `rotatePixels` and `truckPixels` for drags. Mouse and touch use the same
+  formula in the original, so these serve both.
+- `dollyPinchDelta` for a pinch, `dollyWheelDelta` for a mouse wheel.
+- `endRotate` / `endDolly` / `endTruck` when a gesture ends.
 
 ## Input units
 
@@ -79,6 +86,7 @@ sends the same deltas through the input layer instead: `rotatePixels`,
 | --- | --- | --- |
 | `rotatePixels`, `truckPixels` deltas | any, the same as `viewportHeight` | only the ratio has an effect |
 | `dollyPinchDelta`, `dollyDeltaAnchored` delta | density-independent pixels (iOS points, css pixels) | the dolly curve `0.95^(px/8)` uses absolute pixels |
+| `dollyWheelDelta`, `dollyWheelDeltaAnchored` delta | pixel-mode wheel units, positive = down | the curve is `0.95^(units/10)`, the macOS feel; divide by 3 for the other systems' feel |
 | all drag deltas | `last - current` | the pointer convention of camera-controls |
 | anchor and viewport in `dollyDeltaAnchored` | the same as each other | normalized internally |
 
@@ -91,10 +99,14 @@ sends the same deltas through the input layer instead: `rotatePixels`,
 - Touch pinch dolly: factor `1/8`, curve `0.95^(-Δ · dollySpeed)`
 - Touch truck (`truckSpeed = 2`), the part of `TOUCH_DOLLY_TRUCK` that moves
   the zoom toward the pinch midpoint
+- Mouse wheel dolly, including zoom at the cursor
+  (`dollyWheelDeltaAnchored`)
 - The methods `rotate`, `rotateTo`, `rotateAzimuthTo`, `rotatePolarTo`,
   `dolly`, `dollyTo`, `truck`, `moveTo`, `setTarget`, `setPosition`,
   `setLookAt`, `setBoundary`, `getPosition`, `getTarget`, `getSpherical`,
   and `update`, with the `enableTransition` argument
+- `fitToBox` (with `cover` and the padding options) and `fitToSphere`,
+  and the `getDistanceToFitBox` / `getDistanceToFitSphere` helpers
 - The limits `minDistance`, `maxDistance`, `minPolarAngle`,
   `maxPolarAngle`, `minAzimuthAngle`, `maxAzimuthAngle`, and a damped
   target with a panning boundary
@@ -113,9 +125,9 @@ These are not in the original library:
 
 ## Features that are not ported
 
-- Mouse, wheel, and keyboard input, and the `ACTION` mapping
-- `fitToBox`, `fitToSphere`, `lerp`, and `lerpLookAt`
-- `dollyToCursor`, `infinityDolly`, and collision (`colliderMeshes`)
+- Keyboard input and the `ACTION` mapping
+- `lerp` and `lerpLookAt`
+- `infinityDolly` and collision (`colliderMeshes`)
 - Focal offset, orthographic zoom, screen-space panning,
   `verticalDragToForward`, `forward`, `elevate`, `lookInDirectionOf`
 - `boundaryFriction` and `boundaryEnclosesCamera` (the boundary clamps

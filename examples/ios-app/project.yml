@@ -18,6 +18,8 @@ targets:
         CADisableMinimumFrameDurationOnPhone: true
     settings:
       base:
+        # Set your Apple developer team to run on a device.
+        # DEVELOPMENT_TEAM: XXXXXXXXXX
         SWIFT_OBJC_BRIDGING_HEADER: Sources/BridgingHeader.h
         CLANG_CXX_LANGUAGE_STANDARD: c++17
         HEADER_SEARCH_PATHS:

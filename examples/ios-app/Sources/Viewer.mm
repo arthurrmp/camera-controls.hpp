@@ -120,20 +120,17 @@ static constexpr double kFovDegrees = 45.0;
     return YES;
 }
 
-/// Frame the model: 20 degrees above the horizon, at a distance where the
-/// bounding sphere fits the narrow side of the view.
+/// Frame the model with fitToSphere, then start 20 degrees above the
+/// horizon.
 - (void)frameModel {
     _needsFraming = NO;
     const double aspect = (double)_width / (double)_height;
-    const double tanNarrow = _tanHalfFov * std::min(aspect, 1.0);
-    const double distance = 1.4 * _modelRadius / tanNarrow;
-    const double polar = 70.0 * M_PI / 180.0; // measured from +Y
     _controls.minDistance = _modelRadius * 0.5;
-    _controls.maxDistance = distance * 10.0;
-    _controls.setLookAt(_modelCenter.x,
-                        _modelCenter.y + distance * std::cos(polar),
-                        _modelCenter.z + distance * std::sin(polar),
-                        _modelCenter.x, _modelCenter.y, _modelCenter.z);
+    _controls.maxDistance = _modelRadius * 20.0;
+    _controls.fitToSphere({_modelCenter.x, _modelCenter.y, _modelCenter.z},
+                          _modelRadius, false,
+                          kFovDegrees * M_PI / 180.0, aspect);
+    _controls.rotateTo(0.0, 70.0 * M_PI / 180.0, false);
 }
 
 - (void)resizeWidth:(uint32_t)width height:(uint32_t)height {

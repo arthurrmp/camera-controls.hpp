@@ -50,6 +50,13 @@ int main() {
     for (int i = 0; i < 30; i++) controls.update(dt);
     std::printf("   distance: %.3f (from 6.0)\n", controls.distance());
 
+    std::printf("-- fitToBox: unit cube, portrait viewport\n");
+    const double aspect = 393.0 / 852.0;
+    const double fovY = 45.0 * camctl::CameraControls::kPi / 180.0;
+    controls.fitToBox({-1.0, -1.0, -1.0}, {1.0, 1.0, 1.0}, false, fovY, aspect);
+    std::printf("   distance=%.3f azimuth=%.3f polar=%.3f (nearest 90-degree view)\n",
+                controls.distance(), controls.azimuthAngle(), controls.polarAngle());
+
     std::printf("-- camera basis at the current pose\n");
     const camctl::Vec3 eye = controls.getPosition(false);
     const camctl::Vec3 target = controls.getTarget(false);
