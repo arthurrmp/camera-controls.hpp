@@ -340,10 +340,100 @@ public:
                target_.z != prevTarget.z;
     }
 
-    // Input layer. The original library reads pointer events itself; a
-    // native application sends the same deltas through these functions.
-    // Call the end functions when the gesture ends, so that update() goes
-    // back from draggingSmoothTime to smoothTime.
+    // Touch layer. The original library reads pointer events and decides
+    // the gesture itself; this layer is the same. Send every touch, and
+    // the controls rotate with one finger, dolly and truck with two, and
+    // change between the two without a jump when a finger joins or
+    // leaves. A quick tap primes a short window; a touch that starts
+    // inside the window becomes the anchored one-finger zoom (drag down
+    // to dolly in, up to dolly out, around the point under the tap).
+    //
+    // Positions are in density-independent pixels (iOS points, Android
+    // dp, css pixels). Call setViewport() first, in the same units.
+    // Times are in seconds from any monotonic clock.
+
+    void setViewport(double width, double height, double tanHalfFovValue) {
+        viewportW_ = width;
+        viewportH_ = height;
+        tanHalfFov_ = tanHalfFovValue;
+    }
+
+    void touchBegan(long long touchId, double x, double y, double timeSeconds) {
+        if (viewportH_ <= 0) return;
+        if (touchCount_ < kMaxTouches && findTouch(touchId) < 0) {
+            touches_[touchCount_++] = {touchId, x, y, x, y, timeSeconds};
+        }
+        syncTouchMode(timeSeconds);
+    }
+
+    void touchMoved(long long touchId, double x, double y) {
+        const int i = findTouch(touchId);
+        if (i < 0) return;
+        touches_[i].x = x;
+        touches_[i].y = y;
+        switch (touchMode_) {
+        case TouchMode::Rotate:
+            if (i == 0) {
+                rotatePixels(grabX_ - x, grabY_ - y, viewportH_);
+                grabX_ = x;
+                grabY_ = y;
+            }
+            break;
+        case TouchMode::AnchoredZoom:
+            if (i == 0) {
+                dollyDeltaAnchored(zoomY_ - y, tapX_, tapY_,
+                                   viewportW_, viewportH_, tanHalfFov_);
+                zoomY_ = y;
+            }
+            break;
+        case TouchMode::Pinch: {
+            if (touchCount_ < 2) break;
+            double distance, midX, midY;
+            pinchStateNow(distance, midX, midY);
+            if (pinchDistance_ > 0) {
+                dollyPinchDelta(pinchDistance_ - distance);
+                truckPixels(pinchMidX_ - midX, pinchMidY_ - midY,
+                            viewportH_, tanHalfFov_);
+            }
+            pinchDistance_ = distance;
+            pinchMidX_ = midX;
+            pinchMidY_ = midY;
+            break;
+        }
+        case TouchMode::Idle:
+            break;
+        }
+    }
+
+    void touchEnded(long long touchId, double timeSeconds) {
+        const int i = findTouch(touchId);
+        if (i < 0) return;
+        const Touch &t = touches_[i];
+        // A quick touch that did not move far is a tap; it primes the
+        // anchored zoom window.
+        if (touchCount_ == 1 && touchMode_ == TouchMode::Rotate &&
+            timeSeconds - t.beganTime < kTapMaxSeconds &&
+            std::abs(t.x - t.beganX) < kTapSlop &&
+            std::abs(t.y - t.beganY) < kTapSlop) {
+            tapTime_ = timeSeconds;
+            tapX_ = t.beganX;
+            tapY_ = t.beganY;
+        }
+        removeTouch(i);
+        syncTouchMode(timeSeconds);
+    }
+
+    void touchCancelled(long long touchId) {
+        const int i = findTouch(touchId);
+        if (i < 0) return;
+        removeTouch(i);
+        syncTouchMode(-1e9);
+    }
+
+    // Input layer under the touch layer. Use these directly for input the
+    // touch layer does not cover (a mouse, a custom gesture). Call the end
+    // functions when the gesture ends, so that update() goes back from
+    // draggingSmoothTime to smoothTime.
 
     /// One-finger drag. Deltas are (last - current) pixels.
     void rotatePixels(double dxPx, double dyPx, double viewportHeight) {
@@ -450,6 +540,93 @@ private:
     static constexpr double kEpsilon = 1e-5;     // camera-controls approxZero
     static constexpr double kMakeSafeEps = 1e-6; // three.js Spherical.makeSafe
     static constexpr double kMaxSpeed = 1e300;
+
+    // Touch layer state. The tuning values are in density-independent
+    // pixels and seconds.
+    static constexpr int kMaxTouches = 16;
+    static constexpr double kTapMaxSeconds = 0.3;
+    static constexpr double kTapSlop = 16.0;
+    static constexpr double kZoomWindowSeconds = 0.35;
+    static constexpr double kZoomNearTap = 60.0;
+
+    struct Touch {
+        long long id;
+        double x, y, beganX, beganY, beganTime;
+    };
+    enum class TouchMode { Idle, Rotate, AnchoredZoom, Pinch };
+
+    Touch touches_[kMaxTouches] = {};
+    int touchCount_ = 0;
+    TouchMode touchMode_ = TouchMode::Idle;
+    double viewportW_ = 0, viewportH_ = 0, tanHalfFov_ = 0;
+    double grabX_ = 0, grabY_ = 0;
+    double zoomY_ = 0;
+    double pinchDistance_ = 0, pinchMidX_ = 0, pinchMidY_ = 0;
+    double tapTime_ = -1e9, tapX_ = 0, tapY_ = 0;
+
+    int findTouch(long long touchId) const {
+        for (int i = 0; i < touchCount_; i++) {
+            if (touches_[i].id == touchId) return i;
+        }
+        return -1;
+    }
+
+    void removeTouch(int index) {
+        for (int i = index; i < touchCount_ - 1; i++) touches_[i] = touches_[i + 1];
+        touchCount_--;
+    }
+
+    void pinchStateNow(double &distance, double &midX, double &midY) const {
+        const Touch &a = touches_[0];
+        const Touch &b = touches_[1];
+        distance = std::hypot(a.x - b.x, a.y - b.y);
+        midX = (a.x + b.x) * 0.5;
+        midY = (a.y + b.y) * 0.5;
+    }
+
+    /// Sets the mode from the touch count and re-baselines the gesture, so
+    /// that fingers can join and leave without a jump.
+    void syncTouchMode(double timeSeconds) {
+        switch (touchCount_) {
+        case 0:
+            if (touchMode_ == TouchMode::Rotate) {
+                endRotate();
+            } else if (touchMode_ != TouchMode::Idle) {
+                endDolly();
+                endTruck();
+            }
+            touchMode_ = TouchMode::Idle;
+            break;
+        case 1: {
+            if (touchMode_ == TouchMode::Pinch) {
+                endDolly();
+                endTruck();
+            }
+            const Touch &t = touches_[0];
+            const bool nearTap = std::hypot(t.x - tapX_, t.y - tapY_) < kZoomNearTap;
+            if (touchMode_ == TouchMode::Idle && nearTap &&
+                timeSeconds - tapTime_ < kZoomWindowSeconds) {
+                touchMode_ = TouchMode::AnchoredZoom;
+                zoomY_ = t.y;
+            } else if (touchMode_ != TouchMode::AnchoredZoom) {
+                touchMode_ = TouchMode::Rotate;
+                grabX_ = t.x;
+                grabY_ = t.y;
+            }
+            break;
+        }
+        default:
+            if (touchMode_ == TouchMode::Rotate) {
+                endRotate();
+            } else if (touchMode_ == TouchMode::AnchoredZoom) {
+                endDolly();
+                endTruck();
+            }
+            touchMode_ = TouchMode::Pinch;
+            pinchStateNow(pinchDistance_, pinchMidX_, pinchMidY_);
+            break;
+        }
+    }
 
     // Smoothed spherical state (theta about +Y, phi from +Y) and the
     // damping end values, as in the original library's _spherical and

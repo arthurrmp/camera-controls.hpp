@@ -170,11 +170,12 @@ static constexpr double kFovDegrees = 45.0;
     _controls.rotateTo(0.0, 70.0 * M_PI / 180.0, false);
 }
 
-- (void)resizeWidth:(uint32_t)width height:(uint32_t)height {
-    if (width == 0 || height == 0) return;
+- (void)resizeWidth:(uint32_t)width height:(uint32_t)height scale:(double)scale {
+    if (width == 0 || height == 0 || scale <= 0) return;
     _width = width;
     _height = height;
     _view->setViewport({0, 0, width, height});
+    _controls.setViewport(width / scale, height / scale, _tanHalfFov);
     [self updateProjection];
     if (_needsFraming) [self frameModel];
 }
@@ -207,29 +208,20 @@ static constexpr double kFovDegrees = 45.0;
     }
 }
 
-- (void)rotateDx:(double)dx dy:(double)dy {
-    _controls.rotatePixels(dx, dy, _height);
+- (void)touchBegan:(int64_t)touchId x:(double)x y:(double)y time:(double)time {
+    _controls.touchBegan(touchId, x, y, time);
 }
 
-- (void)pinchDollyDelta:(double)deltaPoints {
-    _controls.dollyPinchDelta(deltaPoints);
+- (void)touchMoved:(int64_t)touchId x:(double)x y:(double)y {
+    _controls.touchMoved(touchId, x, y);
 }
 
-- (void)pinchTruckDx:(double)dx dy:(double)dy {
-    _controls.truckPixels(dx, dy, _height, _tanHalfFov);
+- (void)touchEnded:(int64_t)touchId time:(double)time {
+    _controls.touchEnded(touchId, time);
 }
 
-- (void)anchoredDollyDelta:(double)deltaPoints anchorX:(double)x anchorY:(double)y {
-    _controls.dollyDeltaAnchored(deltaPoints, x, y, _width, _height, _tanHalfFov);
-}
-
-- (void)endRotate {
-    _controls.endRotate();
-}
-
-- (void)endPinch {
-    _controls.endDolly();
-    _controls.endTruck();
+- (void)touchCancelled:(int64_t)touchId {
+    _controls.touchCancelled(touchId);
 }
 
 - (void)shutdown {

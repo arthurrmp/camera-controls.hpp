@@ -2,8 +2,8 @@
 //
 //   c++ -std=c++17 -I../include minimal.cpp -o minimal && ./minimal
 //
-// The example simulates a one-finger drag, a release, and a pinch zoom.
-// It prints the damped camera state at each step.
+// The example simulates a one-finger drag, a release, and a pinch zoom
+// through the touch layer. It prints the damped camera state at each step.
 
 #include "camera_controls.hpp"
 
@@ -21,18 +21,21 @@ int main() {
                        /*target*/ 0.0, 1.0, 0.0);
 
     const double dt = 1.0 / 120.0; // 120Hz tick
-    const double viewportHeight = 852; // e.g. iPhone points
+    const double fovY = 45.0 * camctl::CameraControls::kPi / 180.0;
+    const double aspect = 393.0 / 852.0; // e.g. iPhone points, portrait
+    controls.setViewport(393.0, 852.0, std::tan(fovY * 0.5));
 
-    std::printf("-- drag right 20px/frame for 12 frames (deltas are last-current)\n");
-    for (int i = 0; i < 12; i++) {
-        controls.rotatePixels(-20.0, 0.0, viewportHeight);
+    std::printf("-- one finger drags right 20px/frame for 12 frames\n");
+    controls.touchBegan(1, 300.0, 400.0, 0.0);
+    for (int i = 1; i <= 12; i++) {
+        controls.touchMoved(1, 300.0 + 20.0 * i, 400.0);
         controls.update(dt);
     }
     std::printf("   while dragging: azimuthAngle=%.3f rad (end %.3f)\n",
                 controls.azimuthAngle(), controls.getSpherical().theta);
 
     std::printf("-- release; the damped motion continues toward the end value\n");
-    controls.endRotate();
+    controls.touchEnded(1, 1.0);
     for (int i = 1; i <= 30; i++) {
         controls.update(dt);
         if (i % 10 == 0) {
@@ -41,18 +44,20 @@ int main() {
         }
     }
 
-    std::printf("-- pinch out 15px/frame for 10 frames (zoom in)\n");
-    for (int i = 0; i < 10; i++) {
-        controls.dollyPinchDelta(-15.0); // prevDistance - currentDistance
+    std::printf("-- two fingers pinch apart 15px/frame for 10 frames (zoom in)\n");
+    controls.touchBegan(2, 150.0, 500.0, 2.0);
+    controls.touchBegan(3, 250.0, 500.0, 2.0);
+    for (int i = 1; i <= 10; i++) {
+        controls.touchMoved(2, 150.0 - 7.5 * i, 500.0);
+        controls.touchMoved(3, 250.0 + 7.5 * i, 500.0);
         controls.update(dt);
     }
-    controls.endDolly();
+    controls.touchEnded(2, 3.0);
+    controls.touchEnded(3, 3.0);
     for (int i = 0; i < 30; i++) controls.update(dt);
     std::printf("   distance: %.3f (from 6.0)\n", controls.distance());
 
     std::printf("-- fitToBox: unit cube, portrait viewport\n");
-    const double aspect = 393.0 / 852.0;
-    const double fovY = 45.0 * camctl::CameraControls::kPi / 180.0;
     controls.fitToBox({-1.0, -1.0, -1.0}, {1.0, 1.0, 1.0}, false, fovY, aspect);
     std::printf("   distance=%.3f azimuth=%.3f polar=%.3f (nearest 90-degree view)\n",
                 controls.distance(), controls.azimuthAngle(), controls.polarAngle());

@@ -20,12 +20,14 @@ library.
 
 camctl::CameraControls controls;
 controls.setLookAt(/*position*/ 0, 3, 5, /*target*/ 0, 1, 0);
+controls.setViewport(widthPts, heightPts, tanHalfFov);
 
-// Send input from your gesture handlers. Drag deltas are (last - current).
-controls.rotatePixels(dx, dy, viewportHeightPx);           // one-finger drag
-controls.dollyPinchDelta(prevPinchDist - pinchDist);       // pinch, in points
-controls.truckPixels(midDx, midDy, viewportHeightPx, tanHalfFov); // two-finger pan
-controls.endRotate();                                      // on gesture end
+// Forward every touch. The controls decide the gesture: one finger
+// rotates, two fingers dolly and truck, and a double-tap-drag zooms on
+// the tap point. Positions are in density-independent pixels.
+controls.touchBegan(touchId, x, y, timeSeconds);
+controls.touchMoved(touchId, x, y);
+controls.touchEnded(touchId, timeSeconds);
 
 // Update once per frame. Apply the result to your camera.
 controls.update(dt);
@@ -72,18 +74,25 @@ v3.1.2. Differences that C++ makes necessary:
   the `getDistanceToFit*()` functions take the vertical field of view in
   radians and the viewport aspect ratio as arguments.
 
-The original library reads DOM pointer and wheel events itself. A native
-application sends the same deltas through the input layer instead:
+The original library reads DOM pointer and wheel events and decides the
+gesture itself. The touch layer does the same for native input: call
+`setViewport()`, then forward every touch to `touchBegan` / `touchMoved` /
+`touchEnded` / `touchCancelled`. A finger can join or leave a gesture
+mid-drag, as on the web.
+
+Under the touch layer, the delta functions serve input that it does not
+cover:
 
 - `rotatePixels` and `truckPixels` for drags. Mouse and touch use the same
   formula in the original, so these serve both.
 - `dollyPinchDelta` for a pinch, `dollyWheelDelta` for a mouse wheel.
-- `endRotate` / `endDolly` / `endTruck` when a gesture ends.
+- `endRotate` / `endDolly` / `endTruck` when a custom gesture ends.
 
 ## Input units
 
 | Input | Units | Reason |
 | --- | --- | --- |
+| touch layer positions and `setViewport` | density-independent pixels (iOS points, Android dp, css pixels) | the same units the web library gets from the DOM |
 | `rotatePixels`, `truckPixels` deltas | any, the same as `viewportHeight` | only the ratio has an effect |
 | `dollyPinchDelta`, `dollyDeltaAnchored` delta | density-independent pixels (iOS points, css pixels) | the dolly curve `0.95^(px/8)` uses absolute pixels |
 | `dollyWheelDelta`, `dollyWheelDeltaAnchored` delta | pixel-mode wheel units, positive = down | the curve is `0.95^(units/10)`, the macOS feel; divide by 3 for the other systems' feel |
