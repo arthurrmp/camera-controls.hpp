@@ -141,10 +141,13 @@ These are not in the original library:
   screen anchor in place. In the touch layer this is the
   double-tap-and-drag gesture from map applications; the low-level entry
   is `dollyDeltaAnchored`.
-- `CameraControls::lookAt()`: a camera basis from eye and target, with the
-  three.js `Matrix4.lookAt` construction. Use it if the lookAt function of
-  your engine is not stable when the view direction is almost vertical.
-  The doc comment in the header has the details.
+- `CameraControls::lookAt()`: the original ends its update with
+  `camera.lookAt(target)` and lets the three.js camera build the view
+  basis. This library has no camera object, so it provides that step as a
+  static function, with the three.js `Matrix4.lookAt` construction. Use
+  it if the lookAt function of your engine is not stable when the view
+  direction is almost vertical; the doc comment in the header has the
+  details.
 
 ## Features that are not ported
 
