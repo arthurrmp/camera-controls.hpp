@@ -2,9 +2,14 @@ import UIKit
 import QuartzCore
 
 /// CAMetalLayer-backed view. A CADisplayLink drives the render loop and
-/// requests 120Hz on ProMotion screens. The gesture handlers send deltas to
-/// the Viewer, which forwards them to camctl::CameraControls.
-final class ViewerView: UIView, UIGestureRecognizerDelegate {
+/// requests 120Hz on ProMotion screens.
+///
+/// Touch handling reads the raw touches, as the web library reads raw
+/// pointer events: one finger rotates, two fingers dolly and truck, and a
+/// finger can join or leave mid-gesture. UIKit's pan and pinch recognizers
+/// cannot express that handover; their state machines end with the touch
+/// sequence.
+final class ViewerView: UIView {
     override class var layerClass: AnyClass { CAMetalLayer.self }
 
     var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
@@ -21,6 +26,7 @@ final class ViewerView: UIView, UIGestureRecognizerDelegate {
     override init(frame: CGRect) {
         super.init(frame: frame)
         metalLayer.pixelFormat = .bgra8Unorm
+        isMultipleTouchEnabled = true
         viewer = Viewer(layer: metalLayer)
         // The Avocado comes from setup.sh; the cube is the committed
         // fallback so the app builds without it.
@@ -33,7 +39,11 @@ final class ViewerView: UIView, UIGestureRecognizerDelegate {
            let data = try? Data(contentsOf: url) {
             _ = viewer?.loadEnvironment(data)
         }
-        setupGestures()
+        // One-finger zoom: a tap primes a short window. A touch that starts
+        // inside the window becomes a dolly that pivots on the tap point.
+        let tap = UITapGestureRecognizer(target: self, action: #selector(primeTapZoom(_:)))
+        tap.cancelsTouchesInView = false
+        addGestureRecognizer(tap)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -77,112 +87,67 @@ final class ViewerView: UIView, UIGestureRecognizerDelegate {
         viewer?.resizeWidth(width, height: height)
     }
 
-    // MARK: - Gestures
+    // MARK: - Touches
 
-    private func setupGestures() {
-        // The pan tracks one touch and the pinch runs at the same time, so
-        // a second finger can join a drag and zoom, as in the web library.
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
-        pan.maximumNumberOfTouches = 1
-        pan.delegate = self
-        addGestureRecognizer(pan)
-        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:)))
-        pinch.delegate = self
-        addGestureRecognizer(pinch)
-        // One-finger zoom: a tap primes a short window. A drag that starts
-        // inside the window becomes a dolly that pivots on the tap point.
-        let tap = UITapGestureRecognizer(target: self, action: #selector(primeTapZoom(_:)))
-        tap.cancelsTouchesInView = false
-        addGestureRecognizer(tap)
-    }
+    private enum TouchMode { case idle, rotate, anchoredZoom, pinch }
+    private var mode: TouchMode = .idle
+    private var activeTouches: [UITouch] = []
 
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        true
-    }
-
-    private var pinchActive = false
-
-    private var lastGrab: CGPoint = .zero
+    private var lastGrab: CGPoint = .zero          // physical px
     private var lastTapTime: CFTimeInterval = 0
-    private var lastTapLocation: CGPoint = .zero
-    private var oneFingerZooming = false
-    private var lastZoomY: CGFloat = 0
-    private var zoomAnchor: CGPoint = .zero
+    private var lastTapLocation: CGPoint = .zero   // points
+    private var lastZoomY: CGFloat = 0             // points
+    private var zoomAnchor: CGPoint = .zero        // physical px
+    private var lastPinchDistance: CGFloat = 0     // points
+    private var lastPinchMid: CGPoint = .zero      // physical px
 
     @objc private func primeTapZoom(_ gesture: UITapGestureRecognizer) {
         lastTapTime = CACurrentMediaTime()
         lastTapLocation = gesture.location(in: self)
     }
 
-    /// Rotation deltas are physical pixels; the viewport height the Viewer
-    /// divides by is physical too, so only the ratio matters.
-    @objc private func pan(_ gesture: UIPanGestureRecognizer) {
-        let location = gesture.location(in: self)
+    private func physicalPoint(_ point: CGPoint) -> CGPoint {
         let scale = metalLayer.contentsScale
-        let point = CGPoint(x: location.x * scale, y: location.y * scale)
-        switch gesture.state {
-        case .began:
-            let sinceTap = CACurrentMediaTime() - lastTapTime
-            let nearTap = hypot(location.x - lastTapLocation.x,
-                                location.y - lastTapLocation.y) < 60
-            if sinceTap < 0.35, nearTap {
-                oneFingerZooming = true
-                lastZoomY = location.y
-                zoomAnchor = CGPoint(x: lastTapLocation.x * scale,
-                                     y: lastTapLocation.y * scale)
-            } else {
-                lastGrab = point
-            }
-        case .changed:
-            if oneFingerZooming {
-                // Dolly deltas are in points; the anchor is in physical px.
-                viewer?.anchoredDollyDelta(lastZoomY - location.y,
-                                           anchorX: zoomAnchor.x,
-                                           anchorY: zoomAnchor.y)
-                lastZoomY = location.y
-            } else if pinchActive {
-                // Two fingers are down: the pinch owns the camera. Keep the
-                // grab point current so rotation resumes without a jump.
-                lastGrab = point
-            } else {
-                viewer?.rotateDx(lastGrab.x - point.x, dy: lastGrab.y - point.y)
-                lastGrab = point
-            }
-        default:
-            if oneFingerZooming {
-                oneFingerZooming = false
-                viewer?.endPinch()
-            } else {
-                viewer?.endRotate()
-            }
-        }
+        return CGPoint(x: point.x * scale, y: point.y * scale)
     }
 
-    private var lastPinchDistance: CGFloat = 0
-    private var lastPinchMid: CGPoint = .zero
-
-    /// The dolly uses the touch distance in points. The truck uses the
-    /// midpoint in physical px; it moves the zoom toward the pinch location.
-    private func pinchState(_ gesture: UIPinchGestureRecognizer) -> (distance: CGFloat, mid: CGPoint)? {
-        guard gesture.numberOfTouches >= 2 else { return nil }
-        let a = gesture.location(ofTouch: 0, in: self)
-        let b = gesture.location(ofTouch: 1, in: self)
+    /// Touch distance in points (the dolly curve uses density-independent
+    /// pixels) and midpoint in physical px (the truck normalizes by the
+    /// physical viewport height).
+    private func pinchState() -> (distance: CGFloat, mid: CGPoint) {
+        let a = activeTouches[0].location(in: self)
+        let b = activeTouches[1].location(in: self)
         let scale = metalLayer.contentsScale
         return (hypot(a.x - b.x, a.y - b.y),
                 CGPoint(x: (a.x + b.x) * 0.5 * scale, y: (a.y + b.y) * 0.5 * scale))
     }
 
-    @objc private func pinch(_ gesture: UIPinchGestureRecognizer) {
-        switch gesture.state {
-        case .began:
-            pinchActive = true
-            viewer?.endRotate()
-            guard let state = pinchState(gesture) else { return }
-            lastPinchDistance = state.distance
-            lastPinchMid = state.mid
-        case .changed:
-            guard let state = pinchState(gesture) else { return }
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for touch in touches where !activeTouches.contains(touch) {
+            activeTouches.append(touch)
+        }
+        syncMode()
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        switch mode {
+        case .rotate:
+            guard let touch = activeTouches.first else { return }
+            // Deltas are (last - current), both sides in physical px.
+            let point = physicalPoint(touch.location(in: self))
+            viewer?.rotateDx(lastGrab.x - point.x, dy: lastGrab.y - point.y)
+            lastGrab = point
+        case .anchoredZoom:
+            guard let touch = activeTouches.first else { return }
+            // Dolly deltas are in points; the anchor is in physical px.
+            let y = touch.location(in: self).y
+            viewer?.anchoredDollyDelta(lastZoomY - y,
+                                       anchorX: zoomAnchor.x,
+                                       anchorY: zoomAnchor.y)
+            lastZoomY = y
+        case .pinch:
+            guard activeTouches.count >= 2 else { return }
+            let state = pinchState()
             if lastPinchDistance > 0 {
                 viewer?.pinchDollyDelta(lastPinchDistance - state.distance)
                 viewer?.pinchTruckDx(lastPinchMid.x - state.mid.x,
@@ -190,9 +155,52 @@ final class ViewerView: UIView, UIGestureRecognizerDelegate {
             }
             lastPinchDistance = state.distance
             lastPinchMid = state.mid
+        case .idle:
+            break
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        activeTouches.removeAll { touches.contains($0) }
+        syncMode()
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        activeTouches.removeAll { touches.contains($0) }
+        syncMode()
+    }
+
+    /// Sets the mode from the touch count and re-baselines the gesture, so
+    /// that fingers can join and leave without a jump.
+    private func syncMode() {
+        switch activeTouches.count {
+        case 0:
+            switch mode {
+            case .rotate: viewer?.endRotate()
+            case .anchoredZoom, .pinch: viewer?.endPinch()
+            case .idle: break
+            }
+            mode = .idle
+        case 1:
+            if mode == .pinch { viewer?.endPinch() }
+            let location = activeTouches[0].location(in: self)
+            let nearTap = hypot(location.x - lastTapLocation.x,
+                                location.y - lastTapLocation.y) < 60
+            if mode == .idle, CACurrentMediaTime() - lastTapTime < 0.35, nearTap {
+                mode = .anchoredZoom
+                lastZoomY = location.y
+                zoomAnchor = physicalPoint(lastTapLocation)
+            } else if mode != .anchoredZoom {
+                mode = .rotate
+                lastGrab = physicalPoint(location)
+            }
         default:
-            pinchActive = false
-            viewer?.endPinch()
+            if mode == .rotate { viewer?.endRotate() }
+            if mode == .anchoredZoom { viewer?.endPinch() }
+            mode = .pinch
+            let state = pinchState()
+            lastPinchDistance = state.distance
+            lastPinchMid = state.mid
         }
     }
 
