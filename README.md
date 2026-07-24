@@ -46,7 +46,13 @@ The example does not need a renderer. It prints the camera state for a drag,
 a release, and a pinch.
 
 See [`examples/ios-filament.md`](examples/ios-filament.md) for an
-integration with UIKit gestures and Filament.
+integration with UIKit gestures and Filament, and
+[`examples/ios-app`](examples/ios-app) for a complete SwiftUI application
+that renders a glTF model with Filament and all three gestures.
+
+To use the library as a dependency instead of copying the header: the repo
+is a Swift package (`Package.swift`) and a CMake project (an `INTERFACE`
+target named `camera_controls::camera_controls`).
 
 ## API
 
@@ -66,17 +72,6 @@ The original library reads DOM pointer events itself. A native application
 sends the same deltas through the input layer instead: `rotatePixels`,
 `dollyPinchDelta`, `truckPixels`, and the `endRotate` / `endDolly` /
 `endTruck` functions that end a gesture.
-
-## The lookAt basis
-
-Some engine lookAt functions change the up vector when the view direction is
-almost vertical. Filament does this. The change rotates the camera for one
-frame when the user orbits to the top or the bottom limit.
-
-`CameraControls::lookAt()` uses the three.js `Matrix4.lookAt` construction
-with a constant +Y up vector. This construction is stable at the poles. The
-polar clamp in `update()` (the same as `Spherical.makeSafe` in three.js)
-prevents the same problem in the damping step.
 
 ## Input units
 
@@ -111,7 +106,10 @@ These are not in the original library:
 - `dollyDeltaAnchored`: one-finger zoom that keeps the point under a screen
   anchor in place. This is the double-press-and-drag gesture from map
   applications.
-- `CameraControls::lookAt()`: the pole-stable basis described above.
+- `CameraControls::lookAt()`: a camera basis from eye and target, with the
+  three.js `Matrix4.lookAt` construction. Use it if the lookAt function of
+  your engine is not stable when the view direction is almost vertical.
+  The doc comment in the header has the details.
 
 ## Features that are not ported
 

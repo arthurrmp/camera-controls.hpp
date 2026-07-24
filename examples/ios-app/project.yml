@@ -1,0 +1,71 @@
+name: CameraControlsExample
+options:
+  bundleIdPrefix: com.example
+targets:
+  CameraControlsExample:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Sources
+      - path: Resources
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        # Lets CADisplayLink request 120Hz on ProMotion phones.
+        CADisableMinimumFrameDurationOnPhone: true
+    settings:
+      base:
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/BridgingHeader.h
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/../../include"
+          - "$(PROJECT_DIR)/vendor/filament/include"
+        OTHER_LDFLAGS: ["-lc++"]
+    dependencies:
+      - framework: vendor/filament/lib/libbackend.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libbasis_transcoder.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libcamutils.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libdracodec.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libfilabridge.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libfilaflat.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libfilament.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libgeometry.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libgltfio_core.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libibl.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libimage.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libktxreader.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libmeshoptimizer.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libshaders.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libsmol-v.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libstb.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libuberarchive.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libuberzlib.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libutils.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libzstd.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libabseil.xcframework
+        embed: false
+      - framework: vendor/filament/lib/libperfetto.xcframework
+        embed: false
