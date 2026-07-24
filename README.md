@@ -39,16 +39,11 @@ const auto basis = camctl::CameraControls::lookAt(eye, target);
 // (basis.z, 0), (eye, 1).
 ```
 
-To build and run the example:
+To use the library as a dependency instead of copying the header: the repo
+is a Swift package (`Package.swift`) and a CMake project (an `INTERFACE`
+target named `camera_controls::camera_controls`).
 
-```sh
-cd examples && c++ -std=c++17 -I../include minimal.cpp -o minimal && ./minimal
-```
-
-The example does not need a renderer. It prints the camera state for a
-drag, a release, a pinch, and a `fitToBox`.
-
-The example applications, from the most complete to the smallest:
+## Examples
 
 - [`examples/ios-app`](examples/ios-app): SwiftUI + Filament, the touch
   layer, a glTF model with image-based lighting
@@ -62,9 +57,13 @@ The example applications, from the most complete to the smallest:
 [`examples/ios-filament.md`](examples/ios-filament.md) documents the
 UIKit + Filament integration in prose.
 
-To use the library as a dependency instead of copying the header: the repo
-is a Swift package (`Package.swift`) and a CMake project (an `INTERFACE`
-target named `camera_controls::camera_controls`).
+[`examples/minimal.cpp`](examples/minimal.cpp) is the renderer-free
+check: it drives the touch layer and fitToBox and prints the camera
+state. CI runs it on macOS and Linux.
+
+```sh
+cd examples && c++ -std=c++17 -I../include minimal.cpp -o minimal && ./minimal
+```
 
 ## API
 
