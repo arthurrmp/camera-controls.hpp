@@ -48,9 +48,10 @@ The example does not need a renderer. It prints the camera state for a drag,
 a release, and a pinch.
 
 See [`examples/ios-filament.md`](examples/ios-filament.md) for an
-integration with UIKit gestures and Filament, and
-[`examples/ios-app`](examples/ios-app) for a complete SwiftUI application
-that renders a glTF model with Filament and all three gestures.
+integration with UIKit and Filament, [`examples/ios-app`](examples/ios-app)
+for a complete SwiftUI application with the touch layer, and
+[`examples/mac-app`](examples/mac-app) for the macOS version with the
+mouse layer.
 
 To use the library as a dependency instead of copying the header: the repo
 is a Swift package (`Package.swift`) and a CMake project (an `INTERFACE`
