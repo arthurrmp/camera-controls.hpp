@@ -1,0 +1,33 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  example:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run the example
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -Iinclude examples/minimal.cpp -o minimal
+          ./minimal
+
+  swiftpm:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build
+
+  cmake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cmake -B build -DCAMERA_CONTROLS_BUILD_EXAMPLE=ON
+          cmake --build build
+          ./build/minimal
