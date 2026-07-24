@@ -430,8 +430,73 @@ public:
         syncTouchMode(-1e9);
     }
 
-    // Input layer under the touch layer. Use these directly for input the
-    // touch layer does not cover (a mouse, a custom gesture). Call the end
+    // Mouse layer. Same idea as the touch layer: send the events, and the
+    // button-to-action mapping decides the gesture. The defaults are the
+    // v3.1.2 defaults: left rotates, middle dollies, right trucks. Use
+    // dollyWheelDelta or dollyWheelDeltaAnchored for the wheel. Positions
+    // are in the same units as setViewport().
+
+    enum class MouseAction { None, Rotate, Dolly, Truck };
+
+    struct MouseButtons {
+        MouseAction left = MouseAction::Rotate;
+        MouseAction middle = MouseAction::Dolly;
+        MouseAction right = MouseAction::Truck;
+    };
+
+    MouseButtons mouseButtons;
+    bool dollyDragInverted = false;
+
+    /// button: 0 = left, 1 = middle, 2 = right.
+    void mouseDown(int button, double x, double y) {
+        if (viewportH_ <= 0) return;
+        mouseAction_ = button == 0   ? mouseButtons.left
+                       : button == 1 ? mouseButtons.middle
+                       : button == 2 ? mouseButtons.right
+                                     : MouseAction::None;
+        mouseX_ = x;
+        mouseY_ = y;
+    }
+
+    void mouseMoved(double x, double y) {
+        const double dx = mouseX_ - x;
+        const double dy = mouseY_ - y;
+        mouseX_ = x;
+        mouseY_ = y;
+        switch (mouseAction_) {
+        case MouseAction::Rotate:
+            rotatePixels(dx, dy, viewportH_);
+            break;
+        case MouseAction::Dolly:
+            dollyPinchDelta((dollyDragInverted ? -1.0 : 1.0) * dy);
+            break;
+        case MouseAction::Truck:
+            truckPixels(dx, dy, viewportH_, tanHalfFov_);
+            break;
+        case MouseAction::None:
+            break;
+        }
+    }
+
+    void mouseUp() {
+        switch (mouseAction_) {
+        case MouseAction::Rotate:
+            endRotate();
+            break;
+        case MouseAction::Dolly:
+            endDolly();
+            break;
+        case MouseAction::Truck:
+            endTruck();
+            break;
+        case MouseAction::None:
+            break;
+        }
+        mouseAction_ = MouseAction::None;
+    }
+
+    // Input layer under the touch and mouse layers. Use these directly for
+    // input they do not cover (a trackpad, a custom gesture). Call the end
     // functions when the gesture ends, so that update() goes back from
     // draggingSmoothTime to smoothTime.
 
@@ -563,6 +628,8 @@ private:
     double zoomY_ = 0;
     double pinchDistance_ = 0, pinchMidX_ = 0, pinchMidY_ = 0;
     double tapTime_ = -1e9, tapX_ = 0, tapY_ = 0;
+    MouseAction mouseAction_ = MouseAction::None;
+    double mouseX_ = 0, mouseY_ = 0;
 
     int findTouch(long long touchId) const {
         for (int i = 0; i < touchCount_; i++) {

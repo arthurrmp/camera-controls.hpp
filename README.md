@@ -75,18 +75,19 @@ v3.1.2. Differences that C++ makes necessary:
   radians and the viewport aspect ratio as arguments.
 
 The original library reads DOM pointer and wheel events and decides the
-gesture itself. The touch layer does the same for native input: call
-`setViewport()`, then forward every touch to `touchBegan` / `touchMoved` /
-`touchEnded` / `touchCancelled`. A finger can join or leave a gesture
-mid-drag, as on the web.
+gesture itself. The input layers do the same natively; call
+`setViewport()` first, then:
 
-Under the touch layer, the delta functions serve input that it does not
-cover:
+- Touch: forward every touch to `touchBegan` / `touchMoved` /
+  `touchEnded` / `touchCancelled`. A finger can join or leave a gesture
+  mid-drag, as on the web.
+- Mouse: forward `mouseDown` / `mouseMoved` / `mouseUp`, and the wheel to
+  `dollyWheelDelta` or `dollyWheelDeltaAnchored`. The `mouseButtons`
+  mapping has the original defaults: left rotates, middle dollies, right
+  trucks; `dollyDragInverted` is ported too.
 
-- `rotatePixels` and `truckPixels` for drags. Mouse and touch use the same
-  formula in the original, so these serve both.
-- `dollyPinchDelta` for a pinch, `dollyWheelDelta` for a mouse wheel.
-- `endRotate` / `endDolly` / `endTruck` when a custom gesture ends.
+Under them, the delta functions (`rotatePixels`, `dollyPinchDelta`,
+`truckPixels`, `endRotate` / `endDolly` / `endTruck`) serve custom input.
 
 ## Input units
 
@@ -108,7 +109,8 @@ cover:
 - Touch pinch dolly: factor `1/8`, curve `0.95^(-Δ · dollySpeed)`
 - Touch truck (`truckSpeed = 2`), the part of `TOUCH_DOLLY_TRUCK` that moves
   the zoom toward the pinch midpoint
-- Mouse wheel dolly, including zoom at the cursor
+- Mouse input: the `mouseButtons` mapping with its defaults,
+  `dollyDragInverted`, and wheel dolly including zoom at the cursor
   (`dollyWheelDeltaAnchored`)
 - The methods `rotate`, `rotateTo`, `rotateAzimuthTo`, `rotatePolarTo`,
   `dolly`, `dollyTo`, `truck`, `moveTo`, `setTarget`, `setPosition`,
@@ -134,7 +136,8 @@ These are not in the original library:
 
 ## Features that are not ported
 
-- Keyboard input and the `ACTION` mapping
+- Keyboard input, and remapping of the touch gestures (the touch layer
+  uses the default touch mapping)
 - `lerp` and `lerpLookAt`
 - `infinityDolly` and collision (`colliderMeshes`)
 - Focal offset, orthographic zoom, screen-space panning,
